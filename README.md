@@ -4,6 +4,12 @@ Crie quantos ambientes PHP isolados quiser com um único script interativo. Cada
 
 ---
 
+## Requisitos
+
+- Docker (Com docker compose)
+
+---
+
 ## Estrutura
 
 ```
