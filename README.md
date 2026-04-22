@@ -178,3 +178,26 @@ sudo apt install dnsmasq
 echo "address=/.localhost/127.0.0.1" | sudo tee /etc/dnsmasq.d/localhost.conf
 sudo systemctl restart dnsmasq
 ```
+
+---
+
+## Comandos Manage.sh
+
+  manage.sh — Gerencia todos os ambientes Docker
+
+    ./manage.sh list                         Lista todos os ambientes
+    ./manage.sh <env> up                     Sobe o ambiente
+    ./manage.sh <env> down                   Derruba o ambiente
+    ./manage.sh <env> build                  Rebuilda as imagens
+    ./manage.sh <env> restart                Reinicia todos os containers
+    ./manage.sh <env> logs [serviço]         Exibe logs (follow)
+    ./manage.sh <env> shell                  Shell no container PHP
+    ./manage.sh <env> new-project <nome>     Cria novo projeto
+    ./manage.sh <env> artisan <cmd>          Roda artisan em todos os projetos
+    ./manage.sh <env> composer <cmd>         Roda composer (na raiz)
+    ./manage.sh <env> db                     CLI do banco de dados
+    ./manage.sh <env> status                 Status dos containers
+    ./manage.sh <env> destroy                Apaga o ambiente e volumes
+    ./manage.sh all up                       Sobe TODOS os ambientes
+    ./manage.sh all down                     Derruba TODOS os ambientes
+    ./manage.sh all status                   Status de TODOS
