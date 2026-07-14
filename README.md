@@ -187,34 +187,68 @@ sudo systemctl restart dnsmasq
 
 ---
 
-## Ambiente Database (MySQL) — acesso e bancos de dados
+## Banco de dados: um banco por projeto (automático)
 
-Credenciais e detalhes completos ficam em [`envs/apis/configs`](envs/apis/configs). Resumo:
+Cada ambiente sobe **um único container de banco** (`<env>_db`), mas cada
+projeto criado dentro dele (via `new-project.sh` / `./manage.sh <env> new-project`)
+recebe **seu próprio banco de dados** nesse container — projetos do mesmo
+ambiente não compartilham dados entre si.
+
+### Por que isso importa
+
+Nas primeiras versões deste repositório, o `docker-compose.yml` gerado fixava
+as variáveis `DB_HOST`, `DB_DATABASE`, `DB_USERNAME` e `DB_PASSWORD` direto no
+container PHP. Como PHP/Laravel dá prioridade a variáveis de ambiente já
+definidas no processo sobre o `.env` do projeto, isso fazia com que **todo
+projeto dentro do ambiente caísse sempre no mesmo banco**, não importa o que
+fosse configurado no `.env` de cada um — inclusive silenciosamente, sem erro.
+
+Isso foi corrigido:
+
+- O `docker-compose.yml` **não fixa mais** variáveis `DB_*` no container PHP.
+  O `.env` de cada projeto é a fonte de verdade da conexão.
+- O `new-project.sh` gerado para projetos Laravel agora, ao criar um projeto:
+  1. Cria um banco de dados próprio, com o nome do projeto (hífens viram `_`), no container `<env>_db`.
+  2. Concede privilégios ao usuário da aplicação (`appuser`) sobre esse banco.
+  3. Ajusta o `.env` do projeto (`DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`) para apontar para ele — reconhecendo tanto linhas já ativas quanto as comentadas (o Laravel mais novo vem com essas linhas comentadas por padrão, usando SQLite).
+
+Isso vale automaticamente para **ambientes e projetos criados a partir de
+agora**. Ambientes criados antes dessa correção precisam ser ajustados
+manualmente (banco criado + `.env` corrigido + `docker-compose.yml` sem as
+variáveis fixas).
+
+### Credenciais padrão
 
 | | |
 |---|---|
-| Host | `127.0.0.1` |
-| Porta | `3306` |
+| Host (dentro da rede Docker, usado no `.env` do projeto) | `<env>_db` |
+| Host (fora do Docker, do seu computador) | `127.0.0.1` |
+| Porta | a porta escolhida na criação do ambiente (ver `./manage.sh list`) |
 | Usuário root | `root` / senha `root` |
 | Usuário da aplicação | `appuser` / senha `apppassword` |
-| Banco padrão | `<nome raiz do projeto>` |
 
-Acessar via CLI:
+### Acessar o banco
+
 ```bash
 ./manage.sh <env> db
 # ou
-docker exec -it <db_name> mysql -u root -proot
+docker exec -it <env>_db mysql -u root -proot       # MySQL/MariaDB
+docker exec -it <env>_db psql -U appuser postgres   # PostgreSQL
 ```
 
-Criar um novo banco e liberar acesso ao `appuser` (que só enxerga os bancos explicitamente concedidos a ele):
+### Criar/ajustar um banco manualmente
+
+O `new-project.sh` já faz isso sozinho para projetos Laravel novos. Se
+precisar fazer manualmente (ex: ambientes antigos, ou Symfony/genérico, que
+não têm criação automática):
+
 ```bash
-docker exec apis_db mysql -u root -proot -e "\
+docker exec <env>_db mysql -u root -proot -e "\
   CREATE DATABASE IF NOT EXISTS nome_do_banco; \
   GRANT ALL PRIVILEGES ON nome_do_banco.* TO 'appuser'@'%'; \
   FLUSH PRIVILEGES;"
 ```
 
-Outros serviços deste ambiente: Nginx em `http://localhost:8080`, Mailpit em `http://localhost:8025`.
 
 ---
 
