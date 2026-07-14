@@ -187,6 +187,37 @@ sudo systemctl restart dnsmasq
 
 ---
 
+## Ambiente Database (MySQL) — acesso e bancos de dados
+
+Credenciais e detalhes completos ficam em [`envs/apis/configs`](envs/apis/configs). Resumo:
+
+| | |
+|---|---|
+| Host | `127.0.0.1` |
+| Porta | `3306` |
+| Usuário root | `root` / senha `root` |
+| Usuário da aplicação | `appuser` / senha `apppassword` |
+| Banco padrão | `<nome raiz do projeto>` |
+
+Acessar via CLI:
+```bash
+./manage.sh <env> db
+# ou
+docker exec -it <db_name> mysql -u root -proot
+```
+
+Criar um novo banco e liberar acesso ao `appuser` (que só enxerga os bancos explicitamente concedidos a ele):
+```bash
+docker exec apis_db mysql -u root -proot -e "\
+  CREATE DATABASE IF NOT EXISTS nome_do_banco; \
+  GRANT ALL PRIVILEGES ON nome_do_banco.* TO 'appuser'@'%'; \
+  FLUSH PRIVILEGES;"
+```
+
+Outros serviços deste ambiente: Nginx em `http://localhost:8080`, Mailpit em `http://localhost:8025`.
+
+---
+
 ## Comandos Manage.sh
 
   manage.sh — Gerencia todos os ambientes Docker
