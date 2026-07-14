@@ -298,7 +298,6 @@ NGINX
 # Bloco do banco de dados
 DB_SERVICE=""
 DB_DEPENDS=""
-DB_ENV_PHP=""
 DB_VOLUME_ENTRY=""
 DB_VOLUME_MOUNT=""
 DB_HEALTH=""
@@ -306,11 +305,6 @@ DB_HEALTH=""
 if [[ "$DB_ENGINE" == "mysql" ]]; then
   DB_NAME_VAR="${ENV_NAME//-/_}_db"
   DB_VOLUME_NAME="${ENV_NAME}_db_data"
-  DB_ENV_PHP="      DB_HOST: ${ENV_NAME}_db
-      DB_PORT: 3306
-      DB_USERNAME: appuser
-      DB_PASSWORD: apppassword
-      DB_DATABASE: ${DB_NAME_VAR}"
   DB_DEPENDS="      - ${ENV_NAME}_db"
   DB_HEALTH="    healthcheck:
       test: [\"CMD\", \"mysqladmin\", \"ping\", \"-h\", \"localhost\", \"-u\", \"root\", \"-proot\"]
@@ -343,11 +337,6 @@ $DB_HEALTH
 elif [[ "$DB_ENGINE" == "postgres" ]]; then
   DB_NAME_VAR="${ENV_NAME//-/_}_db"
   DB_VOLUME_NAME="${ENV_NAME}_db_data"
-  DB_ENV_PHP="      DB_HOST: ${ENV_NAME}_db
-      DB_PORT: 5432
-      DB_USERNAME: appuser
-      DB_PASSWORD: apppassword
-      DB_DATABASE: ${DB_NAME_VAR}"
   DB_DEPENDS="      - ${ENV_NAME}_db"
   DB_HEALTH="    healthcheck:
       test: [\"CMD-SHELL\", \"pg_isready -U appuser -d ${DB_NAME_VAR}\"]
@@ -447,7 +436,6 @@ services:
       - ./php/local.ini:/usr/local/etc/php/conf.d/local.ini:ro
     environment:
       APP_ENV: local
-${DB_ENV_PHP}
 ${REDIS_ENV_PHP}
       MAIL_HOST: ${ENV_NAME}_mailpit
       MAIL_PORT: 1025
@@ -486,6 +474,44 @@ PROJECT="${1:-}"
 ENV_DIR="$(cd "$(dirname "$0")" && pwd)"
 ENV_NAME="$(basename "$ENV_DIR")"
 COMPOSE="docker compose -f $ENV_DIR/docker-compose.yml"
+[[ -f "$ENV_DIR/.env-meta" ]] && source "$ENV_DIR/.env-meta"
+
+# Cria um banco de dados próprio para o projeto (nome = nome do projeto) e
+# aponta o .env do projeto para ele. Cada projeto do ambiente fica isolado,
+# em vez de compartilhar o banco padrão do ambiente.
+create_project_database() {
+  local DB_NAME DB_HOST_VAL DB_PORT_VAL DB_USER_VAL DB_PASS_VAL DB_CONN_VAL
+  DB_NAME="$(echo "$PROJECT" | tr '-' '_')"
+  case "${DB_ENGINE:-none}" in
+    mysql)
+      $COMPOSE exec "${ENV_NAME}_db" mysql -u root -proot -e "\
+        CREATE DATABASE IF NOT EXISTS \`$DB_NAME\`; \
+        GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO 'appuser'@'%'; \
+        FLUSH PRIVILEGES;"
+      DB_CONN_VAL=mysql; DB_HOST_VAL="${ENV_NAME}_db"; DB_PORT_VAL=3306
+      DB_USER_VAL=appuser; DB_PASS_VAL=apppassword
+      ;;
+    postgres)
+      $COMPOSE exec "${ENV_NAME}_db" psql -U appuser -d postgres -c "CREATE DATABASE \"$DB_NAME\";"
+      DB_CONN_VAL=pgsql; DB_HOST_VAL="${ENV_NAME}_db"; DB_PORT_VAL=5432
+      DB_USER_VAL=appuser; DB_PASS_VAL=apppassword
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+
+  local ENV_FILE="/var/www/$PROJECT/.env"
+  $COMPOSE exec -u www "${ENV_NAME}_php" bash -c "
+    sed -i -E 's/^#?[[:space:]]*DB_CONNECTION=.*/DB_CONNECTION=$DB_CONN_VAL/' $ENV_FILE
+    grep -qE '^#?[[:space:]]*DB_HOST=' $ENV_FILE && sed -i -E 's/^#?[[:space:]]*DB_HOST=.*/DB_HOST=$DB_HOST_VAL/' $ENV_FILE || echo 'DB_HOST=$DB_HOST_VAL' >> $ENV_FILE
+    grep -qE '^#?[[:space:]]*DB_PORT=' $ENV_FILE && sed -i -E 's/^#?[[:space:]]*DB_PORT=.*/DB_PORT=$DB_PORT_VAL/' $ENV_FILE || echo 'DB_PORT=$DB_PORT_VAL' >> $ENV_FILE
+    grep -qE '^#?[[:space:]]*DB_DATABASE=' $ENV_FILE && sed -i -E 's/^#?[[:space:]]*DB_DATABASE=.*/DB_DATABASE=$DB_NAME/' $ENV_FILE || echo 'DB_DATABASE=$DB_NAME' >> $ENV_FILE
+    grep -qE '^#?[[:space:]]*DB_USERNAME=' $ENV_FILE && sed -i -E 's/^#?[[:space:]]*DB_USERNAME=.*/DB_USERNAME=$DB_USER_VAL/' $ENV_FILE || echo 'DB_USERNAME=$DB_USER_VAL' >> $ENV_FILE
+    grep -qE '^#?[[:space:]]*DB_PASSWORD=' $ENV_FILE && sed -i -E 's/^#?[[:space:]]*DB_PASSWORD=.*/DB_PASSWORD=$DB_PASS_VAL/' $ENV_FILE || echo 'DB_PASSWORD=$DB_PASS_VAL' >> $ENV_FILE
+  "
+  echo "Banco de dados criado: $DB_NAME (usuário: $DB_USER_VAL)"
+}
 PROJECTSCRIPT
 
 # Adicionar bloco específico por framework
@@ -496,6 +522,7 @@ PACKAGE="laravel/laravel${FRAMEWORK_VERSION:+:^${FRAMEWORK_VERSION}.0}"
 $COMPOSE exec -u www ${ENV_NAME}_php composer create-project $PACKAGE "/var/www/$PROJECT" --prefer-dist --no-interaction
 $COMPOSE exec ${ENV_NAME}_php bash -c "chown -R www:www /var/www/$PROJECT && chmod -R 775 /var/www/$PROJECT/storage /var/www/$PROJECT/bootstrap/cache 2>/dev/null || true"
 $COMPOSE exec -u www ${ENV_NAME}_php bash -c "cd /var/www/$PROJECT && php artisan key:generate"
+create_project_database
 echo "Projeto Laravel criado: ./projects/$PROJECT"
 LARAVELBLOCK
 
